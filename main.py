@@ -2,14 +2,15 @@ import os
 import sys
 import asyncio
 import traceback
+import random
 from threading import Thread
 from flask import Flask
 from pyrogram import Client, filters, idle
-from pyrogram.raw.functions.phone import CreateGroupCall, LeaveGroupCall
-# DÜZELTME 1: GetFullChat yerine GetFullChannel import ediyoruz
+# YENİ EKLENEN: DiscardGroupCall (Kapatmak için)
+from pyrogram.raw.functions.phone import CreateGroupCall, LeaveGroupCall, DiscardGroupCall
 from pyrogram.raw.functions.channels import GetFullChannel
 
-# --- 1. GÜVENLİK KİLİDİNİ KALDIR ---
+# --- GÜVENLİK KİLİDİNİ KALDIR ---
 try:
     sys.set_int_max_str_digits(0)
 except Exception:
@@ -36,58 +37,88 @@ except Exception as e:
 
 bot = Client("sesli_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
 
-# --- KOMUT İŞLEYİCİ ---
+# ---------------------------------------------------------
+# KOMUT 1: /sesliac (Sadece açar ve 10sn sonra çıkar)
+# ---------------------------------------------------------
 @bot.on_message(filters.command("sesliac") & filters.group)
-async def sesli_yonetimi(client, message):
-    if message.chat.id != TARGET_GROUP_ID:
-        return
+async def sesli_ac(client, message):
+    if message.chat.id != TARGET_GROUP_ID: return
 
     try:
-        status_msg = await message.reply("🔄 İşlem başlıyor...")
-
-        # 1. Peer Çözümleme
+        msg = await message.reply("🔄 Sesli sohbet başlatılıyor...")
         peer = await client.resolve_peer(message.chat.id)
         
-        # 2. Sesli Sohbet Başlatma
-        import random
-        await client.invoke(
-            CreateGroupCall(
-                peer=peer,
-                random_id=random.randint(100000, 999999)
-            )
-        )
-        await status_msg.edit("✅ Sesli sohbet açıldı! 10 saniye sonra çıkıyorum.")
-        print(f"Sesli sohbet açıldı: {message.chat.title}")
+        await client.invoke(CreateGroupCall(peer=peer, random_id=random.randint(100000, 999999)))
+        await msg.edit("✅ Sesli sohbet açıldı! 10 saniye sonra çıkıyorum.")
         
-        # 3. Bekleme
         await asyncio.sleep(10)
         
-        # 4. Çıkış İşlemi (DÜZELTİLDİ: GetFullChannel kullanıldı)
-        # Süper gruplarda (ID -100...) kanal fonksiyonu kullanılır.
+        # Çıkış İşlemi
         full_chat = await client.invoke(GetFullChannel(channel=peer))
-        
         call_info = full_chat.full_chat.call
         if call_info:
             await client.invoke(LeaveGroupCall(call=call_info, source=0))
-            await status_msg.edit("✅ Sesli sohbet açıldı. (Bot ayrıldı)")
-            print("Bot sesli sohbetten başarıyla ayrıldı.")
+            await msg.edit("✅ Sesli sohbet açıldı. (Bot ayrıldı)")
         else:
-            await status_msg.edit("⚠️ Sesli sohbet zaten kapanmış olabilir.")
+            await msg.edit("⚠️ Sesli sohbet zaten kapanmış.")
             
+    except Exception as e:
+        await message.reply(f"Hata: {e}")
+
+# ---------------------------------------------------------
+# KOMUT 2: /seslireset (Kapatır, Yeniden Açar, 20sn sonra çıkar)
+# ---------------------------------------------------------
+@bot.on_message(filters.command("seslireset") & filters.group)
+async def sesli_reset(client, message):
+    if message.chat.id != TARGET_GROUP_ID: return
+
+    try:
+        msg = await message.reply("🔄 Sesli sohbet SIFIRLANIYOR...")
+        peer = await client.resolve_peer(message.chat.id)
+
+        # ADIM 1: Mevcut sesli sohbet var mı kontrol et
+        full_chat = await client.invoke(GetFullChannel(channel=peer))
+        call_info = full_chat.full_chat.call
+
+        if call_info:
+            await msg.edit("🔻 Mevcut sesli sohbet kapatılıyor...")
+            # DiscardGroupCall ile sohbeti herkes için bitir
+            await client.invoke(DiscardGroupCall(call=call_info))
+            # Telegram'ın işlemesi için bekle
+            await asyncio.sleep(3)
+        else:
+            await msg.edit("ℹ️ Açık sesli sohbet yok, yeni açılıyor...")
+
+        # ADIM 2: Yeni Sesli Sohbet Başlat
+        await client.invoke(CreateGroupCall(peer=peer, random_id=random.randint(100000, 999999)))
+        await msg.edit("✅ Yeni sesli sohbet açıldı! 20 saniye sonra listeden düşeceğim.")
+
+        # ADIM 3: 20 Saniye Bekle
+        await asyncio.sleep(20)
+
+        # ADIM 4: Listeden Çık (Leave)
+        # Yeni sohbetin ID'sini tekrar almamız lazım çünkü ID değişti
+        full_chat_new = await client.invoke(GetFullChannel(channel=peer))
+        new_call_info = full_chat_new.full_chat.call
+
+        if new_call_info:
+            await client.invoke(LeaveGroupCall(call=new_call_info, source=0))
+            await msg.edit("✅ İşlem tamamlandı. (Bot ayrıldı)")
+            print("Bot reset sonrası ayrıldı.")
+        
     except Exception:
         error_trace = traceback.format_exc()
-        print(f"HATA:\n{error_trace}")
         if len(error_trace) > 4000: error_trace = error_trace[:4000]
-        await message.reply(f"err:\n`{error_trace}`")
+        await message.reply(f"❌ **HATA:**\n`{error_trace}`")
 
+# ---------------------------------------------------------
+# BOT BAŞLATMA
+# ---------------------------------------------------------
 async def main():
     Thread(target=run_flask).start()
     print("Bot başlatılıyor...")
     await bot.start()
-    
-    # Hafızayı tazele
     async for dialog in bot.get_dialogs(): pass
-    
     print("Bot hazır!")
     await idle()
     await bot.stop()
