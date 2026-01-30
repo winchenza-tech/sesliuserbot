@@ -78,7 +78,7 @@ async def sesli_yonetimi(client, message):
         error_trace = traceback.format_exc()
         print(f"HATA:\n{error_trace}")
         if len(error_trace) > 4000: error_trace = error_trace[:4000]
-        await message.reply(f"❌ **HATA:**\n`{error_trace}`")
+        await message.reply(f"err:\n`{error_trace}`")
 
 async def main():
     Thread(target=run_flask).start()
