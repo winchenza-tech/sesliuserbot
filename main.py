@@ -1,4 +1,5 @@
 import os
+import sys
 import asyncio
 from threading import Thread
 from flask import Flask
@@ -6,44 +7,65 @@ from pyrogram import Client, filters, idle
 from pyrogram.raw.functions.phone import CreateGroupCall, LeaveGroupCall
 from pyrogram.raw.functions.messages import GetFullChat
 
-# --- RENDER HEALTH CHECK ---
+# --- DEDEKTİF MODU BAŞLIYOR ---
+print(">>> 1. Sistem Başlatılıyor...")
+
+# Python'un güvenlik limitini artıralım (Hata buysa bypass etsin)
+try:
+    sys.set_int_max_str_digits(100000)
+    print(">>> 2. Python sayı limiti genişletildi.")
+except Exception:
+    print(">>> 2. Limit genişletme gerekmedi (Python sürümü eski olabilir).")
+
+# --- FLASK AYARLARI ---
 app = Flask(__name__)
 @app.route('/')
 def home(): return "Bot Çalışıyor"
 
 def run_flask():
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    print(">>> Flask sunucusu başlatılıyor...")
+    # PORT değişkenini kontrol ediyoruz
+    raw_port = os.environ.get("PORT", "5000")
+    print(f">>> PORT değeri okunuyor... Uzunluk: {len(str(raw_port))}")
+    try:
+        port = int(raw_port)
+        app.run(host='0.0.0.0', port=port)
+    except Exception as e:
+        print(f"!!! HATA: PORT değişkeninde sorun var! Hata: {e}")
 
-# --- HATA AYIKLAMA (DEBUG) ---
-print("--- DEĞİŞKEN KONTROLÜ BAŞLIYOR ---")
+# --- BOT AYARLARI KONTROLÜ ---
+print(">>> 3. Değişkenler okunuyor...")
 
-raw_api_id = os.environ.get("API_ID", "")
-raw_target_id = os.environ.get("TARGET_GROUP_ID", "")
+raw_api_id = os.environ.get("API_ID", "0")
+raw_target_id = os.environ.get("TARGET_GROUP_ID", "0")
+session_string = os.environ.get("SESSION_STRING", "")
 
-print(f"API_ID Uzunluğu: {len(raw_api_id)} karakter")
-print(f"TARGET_GROUP_ID Uzunluğu: {len(raw_target_id)} karakter")
+print(f">>> API_ID ham uzunluk: {len(raw_api_id)}")
+print(f">>> TARGET_GROUP_ID ham uzunluk: {len(raw_target_id)}")
+print(f">>> SESSION_STRING ham uzunluk: {len(session_string)}")
 
-if len(raw_api_id) > 20:
-    print("!!! HATA: API_ID çok uzun! Muhtemelen yanlışlıkla Session String'i API_ID kutusuna yapıştırdınız.")
-    exit(1)
-
-if len(raw_target_id) > 20:
-    print("!!! HATA: TARGET_GROUP_ID çok uzun! Buraya sadece -100 ile başlayan ID yazın.")
-    exit(1)
-
-# --- AYARLAR ---
+# Tek tek çevirmeyi deneyelim
 try:
+    print(">>> API_ID sayıya çevriliyor...")
     API_ID = int(raw_api_id)
-    TARGET_GROUP_ID = int(raw_target_id)
-    API_HASH = os.environ.get("API_HASH")
-    SESSION_STRING = os.environ.get("SESSION_STRING")
-except ValueError:
-    print("HATA: API_ID veya TARGET_GROUP_ID sayı değil (harf içeriyor).")
+    print(">>> API_ID Başarılı.")
+except Exception as e:
+    print(f"!!! PATLADI: Sorun API_ID değişkeninde! Hata: {e}")
     exit(1)
 
-print("--- DEĞİŞKENLER DOĞRU GÖRÜNÜYOR, BOT BAŞLATILIYOR ---")
+try:
+    print(">>> TARGET_GROUP_ID sayıya çevriliyor...")
+    TARGET_GROUP_ID = int(raw_target_id)
+    print(">>> TARGET_GROUP_ID Başarılı.")
+except Exception as e:
+    print(f"!!! PATLADI: Sorun TARGET_GROUP_ID değişkeninde! Hata: {e}")
+    exit(1)
 
-bot = Client("sesli_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
+API_HASH = os.environ.get("API_HASH")
+
+# --- BOT BAŞLATILIYOR ---
+print(">>> 4. Bot Client oluşturuluyor...")
+bot = Client("sesli_bot", session_string=session_string, api_id=API_ID, api_hash=API_HASH)
 
 @bot.on_message(filters.command("sesliac") & filters.group)
 async def sesli_yonetimi(client, message):
@@ -53,7 +75,7 @@ async def sesli_yonetimi(client, message):
     try:
         peer = await client.resolve_peer(message.chat.id)
         await client.invoke(CreateGroupCall(peer=peer, random_id=client.rnd_id()))
-        msg = await message.reply("✅ Sesli sohbet başlatıldı. 10 sn sonra çıkıyorum.")
+        msg = await message.reply("✅ Sesli sohbet başlatıldı.")
         
         await asyncio.sleep(10)
         
@@ -69,13 +91,14 @@ async def sesli_yonetimi(client, message):
 
 async def main():
     Thread(target=run_flask).start()
-    await bot.start()
     
-    # Peer ID Invalid hatasını çözmek için dialogları çek
-    print("Grup listesi güncelleniyor...")
+    print(">>> 5. Bot bağlanıyor...")
+    await bot.start()
+    print(">>> 6. Bot başarıyla bağlandı! Diyaloglar çekiliyor...")
+    
     async for dialog in bot.get_dialogs():
         pass 
-    print("Bot hazır!")
+    print(">>> 7. Diyaloglar alındı. Bot göreve hazır.")
     
     await idle()
     await bot.stop()
