@@ -54,7 +54,7 @@ async def sesli_ac(client, message):
 
         if existing_call:
             # EĞER AÇIKSA: Uyarı mesajı ver ve dur.
-            await msg.edit("⚠️ Sesli sohbet zaten açık.**\n\nEğer hala sorun yaşıyorsan `/seslireset` yazabilirsin. Sorun yine devam ederse Zenithar'ı etiketle belki görmemezlikten gelmez.")
+            await msg.edit("⚠️ **Sesli sohbet zaten açık.**\n\nEğer hala sorun yaşıyorsan `/seslireset` yazabilirsin. Eğer sorun devam ederse Zenithar'ı etiketleyin belki sizi görmezden gelmez.")
             return # Fonksiyonu burada bitir
         
         # EĞER KAPALIYSA: Açma işlemine devam et
@@ -71,7 +71,7 @@ async def sesli_ac(client, message):
         
         if call_info:
             await client.invoke(LeaveGroupCall(call=call_info, source=0))
-            await msg.edit("✅ Sesli sohbet açıldı. (Bot ayrıldı)")
+            await msg.edit("✅ Sesli sohbet açıldı. Doluşun")
         
     except Exception as e:
         await message.reply(f"❌ Hata: {e}")
@@ -97,7 +97,43 @@ async def sesli_reset(client, message):
             await client.invoke(DiscardGroupCall(call=call_info))
             await asyncio.sleep(3)
         else:
-            await msg.edit("ℹ️ Şu an açık bir sohbet yok, yenisi açılıyor...")
+            await msg.edit("ℹ️ Zaten açık bir sohbet yok, yenisi açılıyor...")
 
         # ADIM 2: Yeni Aç
-        await client.invoke(Create
+        await client.invoke(CreateGroupCall(peer=peer, random_id=random.randint(100000, 999999)))
+        await msg.edit(" Yeni sesli sohbet açıldı! 20 saniye sonra çıkacağım. Boş yapmaya devam edebilirsiniz.")
+
+        # ADIM 3: 20 Saniye Bekle
+        await asyncio.sleep(20)
+
+        # ADIM 4: Ayrıl
+        full_chat_new = await client.invoke(GetFullChannel(channel=peer))
+        new_call_info = full_chat_new.full_chat.call
+
+        if new_call_info:
+            await client.invoke(LeaveGroupCall(call=new_call_info, source=0))
+            await msg.edit("✅ İşlem tamamlandı. (Bot ayrıldı)")
+        
+    except Exception:
+        error_trace = traceback.format_exc()
+        if len(error_trace) > 4000: error_trace = error_trace[:4000]
+        await message.reply(f"❌ **HATA:**\n`{error_trace}`")
+
+# ---------------------------------------------------------
+# BAŞLATMA
+# ---------------------------------------------------------
+async def main():
+    Thread(target=run_flask).start()
+    print("Bot başlatılıyor...")
+    await bot.start()
+    
+    # Dialogları güncelle (ID hatalarını önler)
+    async for dialog in bot.get_dialogs(): pass
+    
+    print("Bot hazır!")
+    await idle()
+    await bot.stop()
+
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
