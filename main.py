@@ -54,7 +54,7 @@ async def sesli_ac(client, message):
 
         if existing_call:
             # EĞER AÇIKSA: Uyarı mesajı ver ve dur.
-            await msg.edit("⚠️ **Sesli sohbet zaten açık.**\n\nEğer hala sorun yaşıyorsan `/seslireset` yazabilirsin. Eğer sorun devam ederse Zenithar'ı etiketleyin belki sizi görmezden gelmez.")
+            await msg.edit("⚠️ **Sesli sohbet zaten açık.\nEğer hala sorun yaşıyorsan \n`/seslireset` yazabilirsin. Eğer sorun devam ederse \nZenithar'ı etiketleyin belki sizi görmezden gelmez.")
             return # Fonksiyonu burada bitir
         
         # EĞER KAPALIYSA: Açma işlemine devam et
