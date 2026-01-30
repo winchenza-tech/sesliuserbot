@@ -49,9 +49,9 @@ async def sesli_ac(client, message):
         peer = await client.resolve_peer(message.chat.id)
         
         await client.invoke(CreateGroupCall(peer=peer, random_id=random.randint(100000, 999999)))
-        await msg.edit("✅ Sesli sohbet açıldı! 10 saniye sonra çıkıyorum.")
+        await msg.edit("✅ Artık sesli sohbeti başlatabilirsiniz. 20 saniye sonra çıkıyorum.")
         
-        await asyncio.sleep(10)
+        await asyncio.sleep(20)
         
         # Çıkış İşlemi
         full_chat = await client.invoke(GetFullChannel(channel=peer))
@@ -91,7 +91,7 @@ async def sesli_reset(client, message):
 
         # ADIM 2: Yeni Sesli Sohbet Başlat
         await client.invoke(CreateGroupCall(peer=peer, random_id=random.randint(100000, 999999)))
-        await msg.edit("✅ Yeni sesli sohbet açıldı! 20 saniye sonra listeden düşeceğim.")
+        await msg.edit("✅ Yeni sesli sohbet balatabilirsiniz. 20 saniye sonra ayrılıyorum.")
 
         # ADIM 3: 20 Saniye Bekle
         await asyncio.sleep(20)
