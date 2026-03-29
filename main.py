@@ -34,13 +34,13 @@ try:
     TARGET_GROUP_ID = int(os.environ.get("TARGET_GROUP_ID", "0").strip())
 except Exception as e:
     print(f"Ayar Hatası: {e}")
-    # Local testler için hata vermesini istemiyorsan exit(1) kısmını silebilirsin.
-    # exit(1) 
+    # Local'de test ediyorsan programın kapanmaması için exit(1) kaldırılabilir.
 
 bot = Client("sesli_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
 
 # --- AYARLAR (Reklam Engelleyici) ---
-ADMIN_IDS = [8416720490, 8382929624, 652932220, 7094870780] # Kendi ID'ni de buraya eklemeyi unutma
+# Kendi ID'ni veya yetki vermek istediğin kişilerin ID'lerini buraya ekle
+ADMIN_IDS = [8416720490, 8382929624, 652932220, 7094870780] 
 BANNED_WORDS = ["aramıza", "grubumuza", "grubuna", "sohbet", "ortam"]
 TELEGRAM_LINK_REGEX = r'(?:https?:\/\/)?(?:t\s*\.\s*me|telegram\s*\.\s*me|telegram\s*\.\s*dog)\s*\/\s*(?:\+)?[\w\-]+'
 BLACKLIST_FILE = "blacklist.json"
@@ -71,7 +71,7 @@ def is_admin(user_id):
     return user_id in ADMIN_IDS
 
 # =========================================================
-# SESLİ SOHBET KOMUTLARI
+# 1. SESLİ SOHBET KOMUTLARI (SADECE HEDEF GRUPTA ÇALIŞIR)
 # =========================================================
 
 @bot.on_message(filters.command("sesliac") & filters.group)
@@ -142,7 +142,7 @@ async def sesli_reset(client, message):
 
 
 # =========================================================
-# REKLAM ENGELLEME YÖNETİM KOMUTLARI
+# 2. REKLAM YÖNETİM KOMUTLARI (TÜM GRUPLARDA ÇALIŞIR)
 # =========================================================
 
 @bot.on_message(filters.command("ekle") & filters.group)
@@ -220,11 +220,10 @@ async def list_blacklist_command(client, message):
     
     await message.reply(text)
 
+
 # =========================================================
-# REKLAM DENETLEYİCİ (AD BLOCKER) OTO-SİLİCİ
+# 3. REKLAM DENETLEYİCİ (TÜM GRUPLARDA SADECE KARALİSTEYİ TARAR)
 # =========================================================
-# group=1 parametresi, bu fonksiyonun diğer komutları engellemeden 
-# tüm mesajları arka planda dinlemesini sağlar.
 
 @bot.on_message(filters.group, group=1)
 async def delete_octopus_ads(client, message):
@@ -236,28 +235,35 @@ async def delete_octopus_ads(client, message):
     username = message.from_user.username.lower() if message.from_user.username else ""
     user_id_str = str(message.from_user.id)
     
+    # 1. KONTROL: Bu kişi karalistede mi?
     is_blacklisted = (username in BLACKLIST) or (user_id_str in BLACKLIST)
+    
+    # EĞER KARALİSTEDE DEĞİLSE MESAJA HİÇ BAKMADAN ÇIK
+    if not is_blacklisted:
+        return
 
-    if is_blacklisted:
-        content = message.text or message.caption or ""
-        content_lower = content.lower()
+    # 2. KONTROL: Karalistedeki kişi mesaj atmış, içinde reklam var mı?
+    content = message.text or message.caption or ""
+    content_lower = content.lower()
 
-        has_link = bool(re.search(TELEGRAM_LINK_REGEX, content, re.IGNORECASE | re.MULTILINE))
-        has_banned_word = any(word in content_lower for word in BANNED_WORDS)
+    has_link = bool(re.search(TELEGRAM_LINK_REGEX, content, re.IGNORECASE | re.MULTILINE))
+    has_banned_word = any(word in content_lower for word in BANNED_WORDS)
 
-        if has_link or has_banned_word:
-            try:
-                await message.delete()
-                
-                yakalanan_sey = []
-                if has_link: yakalanan_sey.append("Link")
-                if has_banned_word: yakalanan_sey.append("Yasaklı Kelime")
-                
-                sebep = f"Karaliste ({user_id_str}/{username}) -> {' + '.join(yakalanan_sey)}"
-                print(f"✅ REKLAM SİLİNDİ: {message.from_user.first_name} (@{username}) | Sebep: {sebep}")
-                
-            except Exception as e:
-                print(f"❌ Silme hatası: {e} - Yetkileri kontrol et.")
+    # Karalistedeki kişinin mesajında link veya yasaklı kelime varsa sil
+    if has_link or has_banned_word:
+        try:
+            await message.delete()
+            
+            yakalanan_sey = []
+            if has_link: yakalanan_sey.append("Link")
+            if has_banned_word: yakalanan_sey.append("Yasaklı Kelime")
+            
+            sebep = f"Karaliste ({user_id_str}/{username}) -> {' + '.join(yakalanan_sey)}"
+            print(f"✅ REKLAM SİLİNDİ: {message.from_user.first_name} (@{username}) | Sebep: {sebep}")
+            
+        except Exception as e:
+            print(f"❌ Silme hatası: {e} - Botun bulunduğu grupta mesaj silme yetkisi olmayabilir.")
+
 
 # =========================================================
 # BAŞLATMA
@@ -268,9 +274,10 @@ async def main():
     print("Bot başlatılıyor...")
     await bot.start()
     
+    # Dialogları güncellemek (ID hatalarını önler)
     async for dialog in bot.get_dialogs(): pass
     
-    print("🚀 Bot hazır, sesli komutları ve reklam engelleyici aktif!")
+    print("🚀 Bot hazır, sesli komutları ve tüm gruplarda karaliste denetimi aktif!")
     await idle()
     await bot.stop()
 
