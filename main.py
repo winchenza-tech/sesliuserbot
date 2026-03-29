@@ -49,7 +49,7 @@ BLACKLIST_FILE = "blacklist.json"
 def load_blacklist():
     default_blacklist = {
         "octopusgame_bot": "Octopus Game TR Reklam Botu",
-        "eskidenyesil": "Deneme Test Hesabı"
+        "silinenyesil": "Deneme Test Hesabı"
     }
     if os.path.exists(BLACKLIST_FILE):
         with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
