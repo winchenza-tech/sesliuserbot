@@ -34,16 +34,15 @@ try:
     TARGET_GROUP_ID = int(os.environ.get("TARGET_GROUP_ID", "0").strip())
 except Exception as e:
     print(f"Ayar Hatası: {e}")
-    # Local'de test ediyorsan programın kapanmaması için exit(1) kaldırılabilir.
 
 bot = Client("sesli_bot", session_string=SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
 
 # --- AYARLAR (Reklam Engelleyici) ---
-# Kendi ID'ni veya yetki vermek istediğin kişilerin ID'lerini buraya ekle
 ADMIN_IDS = [8416720490, 8382929624, 652932220, 7094870780] 
 BANNED_WORDS = ["aramıza", "grubumuza", "grubuna", "sohbet", "ortam"]
 TELEGRAM_LINK_REGEX = r'(?:https?:\/\/)?(?:t\s*\.\s*me|telegram\s*\.\s*me|telegram\s*\.\s*dog)\s*\/\s*(?:\+)?[\w\-]+'
 BLACKLIST_FILE = "blacklist.json"
+CMD_PREFIXES = ["/", ".", "!"] # Komutları .ekle veya !ekle olarak da kullanabilmeni sağlar
 
 # --- JSON VERİTABANI İŞLEMLERİ ---
 def load_blacklist():
@@ -67,14 +66,17 @@ def save_blacklist():
 
 BLACKLIST = load_blacklist()
 
-def is_admin(user_id):
-    return user_id in ADMIN_IDS
+def is_admin(user):
+    # Eğer mesaj atan kişi botun kurulu olduğu ana hesapsa VEYA ID'si listedeyse admin say
+    if not user: return False
+    return user.is_self or (user.id in ADMIN_IDS)
+
 
 # =========================================================
 # 1. SESLİ SOHBET KOMUTLARI (SADECE HEDEF GRUPTA ÇALIŞIR)
 # =========================================================
 
-@bot.on_message(filters.command("sesliac") & filters.group)
+@bot.on_message(filters.command("sesliac", prefixes=CMD_PREFIXES) & filters.group)
 async def sesli_ac(client, message):
     if message.chat.id != TARGET_GROUP_ID: return
 
@@ -105,7 +107,7 @@ async def sesli_ac(client, message):
     except Exception as e:
         await message.reply(f"❌ Hata: {e}")
 
-@bot.on_message(filters.command("seslireset") & filters.group)
+@bot.on_message(filters.command("seslireset", prefixes=CMD_PREFIXES) & filters.group)
 async def sesli_reset(client, message):
     if message.chat.id != TARGET_GROUP_ID: return
 
@@ -142,73 +144,77 @@ async def sesli_reset(client, message):
 
 
 # =========================================================
-# 2. REKLAM YÖNETİM KOMUTLARI (TÜM GRUPLARDA ÇALIŞIR)
+# 2. REKLAM YÖNETİM KOMUTLARI (.ekle / .cikar / .liste)
 # =========================================================
 
-@bot.on_message(filters.command("ekle") & filters.group)
+@bot.on_message(filters.command("ekle", prefixes=CMD_PREFIXES) & filters.group)
 async def add_blacklist_command(client, message):
-    if not message.from_user or not is_admin(message.from_user.id): return
+    try:
+        if not is_admin(message.from_user): return
 
-    # Yanıtlanan mesaj varsa
-    if message.reply_to_message and message.reply_to_message.from_user:
-        target_user = message.reply_to_message.from_user
-        target_id = str(target_user.id)
-        
-        BLACKLIST[target_id] = f"ID Ban (Ekleyen: {message.from_user.first_name})"
-        if target_user.username:
-            BLACKLIST[target_user.username.lower()] = f"Username Ban (Ekleyen: {message.from_user.first_name})"
-        
-        save_blacklist()
-        await message.reply(f"✅ Kullanıcı karalisteye eklendi (ID: {target_id}).")
-        return
-
-    # Argüman girilmişse
-    if len(message.command) > 1:
-        target = message.command[1].replace("@", "").lower()
-        BLACKLIST[target] = f"Manuel Eklendi (Ekleyen: {message.from_user.first_name})"
-        save_blacklist()
-        await message.reply(f"✅ `{target}` karalisteye eklendi.")
-    else:
-        await message.reply("Kullanım: Bir mesaja yanıt verin veya `/ekle <id_veya_username>` yazın.")
-
-@bot.on_message(filters.command("cikar") & filters.group)
-async def remove_blacklist_command(client, message):
-    if not message.from_user or not is_admin(message.from_user.id): return
-
-    if message.reply_to_message and message.reply_to_message.from_user:
-        target_user = message.reply_to_message.from_user
-        target_id = str(target_user.id)
-        target_username = target_user.username.lower() if target_user.username else None
-        
-        removed = False
-        if target_id in BLACKLIST:
-            del BLACKLIST[target_id]
-            removed = True
-        if target_username and target_username in BLACKLIST:
-            del BLACKLIST[target_username]
-            removed = True
+        if message.reply_to_message and message.reply_to_message.from_user:
+            target_user = message.reply_to_message.from_user
+            target_id = str(target_user.id)
             
-        if removed:
+            BLACKLIST[target_id] = f"ID Ban (Ekleyen: {message.from_user.first_name})"
+            if target_user.username:
+                BLACKLIST[target_user.username.lower()] = f"Username Ban (Ekleyen: {message.from_user.first_name})"
+            
             save_blacklist()
-            await message.reply("✅ Kullanıcı karalisteden çıkarıldı.")
-        else:
-            await message.reply("⚠️ Bu kullanıcı zaten karalistede bulunmuyor.")
-        return
+            await message.reply(f"✅ Kullanıcı karalisteye eklendi (ID: {target_id}).")
+            return
 
-    if len(message.command) > 1:
-        target = message.command[1].replace("@", "").lower()
-        if target in BLACKLIST:
-            del BLACKLIST[target]
+        if len(message.command) > 1:
+            target = message.command[1].replace("@", "").lower()
+            BLACKLIST[target] = f"Manuel Eklendi (Ekleyen: {message.from_user.first_name})"
             save_blacklist()
-            await message.reply(f"✅ `{target}` karalisteden çıkarıldı.")
+            await message.reply(f"✅ `{target}` karalisteye eklendi.")
         else:
-            await message.reply(f"⚠️ `{target}` karalistede bulunamadı.")
-    else:
-        await message.reply("Kullanım: Bir mesaja yanıt verin veya `/cikar <id_veya_username>` yazın.")
+            await message.reply("⚠️ Kullanım: Bir mesaja yanıt verin veya `.ekle <id_veya_username>` yazın.")
+    except Exception as e:
+        await message.reply(f"❌ Komut Hatası: {e}")
 
-@bot.on_message(filters.command("liste") & filters.group)
+@bot.on_message(filters.command("cikar", prefixes=CMD_PREFIXES) & filters.group)
+async def remove_blacklist_command(client, message):
+    try:
+        if not is_admin(message.from_user): return
+
+        if message.reply_to_message and message.reply_to_message.from_user:
+            target_user = message.reply_to_message.from_user
+            target_id = str(target_user.id)
+            target_username = target_user.username.lower() if target_user.username else None
+            
+            removed = False
+            if target_id in BLACKLIST:
+                del BLACKLIST[target_id]
+                removed = True
+            if target_username and target_username in BLACKLIST:
+                del BLACKLIST[target_username]
+                removed = True
+                
+            if removed:
+                save_blacklist()
+                await message.reply("✅ Kullanıcı karalisteden çıkarıldı.")
+            else:
+                await message.reply("⚠️ Bu kullanıcı zaten karalistede bulunmuyor.")
+            return
+
+        if len(message.command) > 1:
+            target = message.command[1].replace("@", "").lower()
+            if target in BLACKLIST:
+                del BLACKLIST[target]
+                save_blacklist()
+                await message.reply(f"✅ `{target}` karalisteden çıkarıldı.")
+            else:
+                await message.reply(f"⚠️ `{target}` karalistede bulunamadı.")
+        else:
+            await message.reply("⚠️ Kullanım: Bir mesaja yanıt verin veya `.cikar <id_veya_username>` yazın.")
+    except Exception as e:
+        await message.reply(f"❌ Komut Hatası: {e}")
+
+@bot.on_message(filters.command("liste", prefixes=CMD_PREFIXES) & filters.group)
 async def list_blacklist_command(client, message):
-    if not message.from_user or not is_admin(message.from_user.id): return
+    if not is_admin(message.from_user): return
     
     if not BLACKLIST:
         await message.reply("📋 Karaliste şu an boş.")
@@ -222,34 +228,50 @@ async def list_blacklist_command(client, message):
 
 
 # =========================================================
-# 3. REKLAM DENETLEYİCİ (TÜM GRUPLARDA SADECE KARALİSTEYİ TARAR)
+# 3. REKLAM DENETLEYİCİ (GELİŞMİŞ ID VE HATA KONTROLÜ)
 # =========================================================
 
 @bot.on_message(filters.group, group=1)
 async def delete_octopus_ads(client, message):
     if not message.from_user: return
     
-    # Yönetici ise pas geç
-    if is_admin(message.from_user.id): return
+    # Yöneticiysen (senin ana hesabınsa) pas geç!
+    if is_admin(message.from_user): return
 
     username = message.from_user.username.lower() if message.from_user.username else ""
     user_id_str = str(message.from_user.id)
     
-    # 1. KONTROL: Bu kişi karalistede mi?
-    is_blacklisted = (username in BLACKLIST) or (user_id_str in BLACKLIST)
+    # ÖZEL TEST: Bahsettiğin sabıkalı ID'yi buraya doğrudan (hardcoded) ekliyoruz.
+    is_test_account = (user_id_str == "7495125802")
     
-    # EĞER KARALİSTEDE DEĞİLSE MESAJA HİÇ BAKMADAN ÇIK
+    # 1. KONTROL: Bu kişi karalistede mi VEYA özel test hesabı mı?
+    is_blacklisted = (username in BLACKLIST) or (user_id_str in BLACKLIST) or is_test_account
+    
+    # Eğer adam listede değilse hiç bakma
     if not is_blacklisted:
         return
 
-    # 2. KONTROL: Karalistedeki kişi mesaj atmış, içinde reklam var mı?
+    # Eğer sabıkalı hesapsa terminale bilgi yazdıralım ki botun görüp görmediğini anlayalım
+    if is_test_account:
+        print(f" deneme deneme mesajı inceliyorum...")
+
     content = message.text or message.caption or ""
     content_lower = content.lower()
 
+    # Link ve Kelime taraması
     has_link = bool(re.search(TELEGRAM_LINK_REGEX, content, re.IGNORECASE | re.MULTILINE))
     has_banned_word = any(word in content_lower for word in BANNED_WORDS)
 
-    # Karalistedeki kişinin mesajında link veya yasaklı kelime varsa sil
+    # GÜVENLİK AĞI: Eğer Regex linki kaçırırsa düz metin olarak t.me geçiyor mu diye bak
+    if not has_link and ("t.me/" in content_lower or "telegram.me/" in content_lower):
+        has_link = True
+        if is_test_account:
+            print("-> Regex kaçırdı ama 't.me/' düz metin olarak yakalandı!")
+
+    if is_test_account:
+        print(f"-> Link Bulundu mu?: {has_link} | Yasaklı Kelime Bulundu mu?: {has_banned_word}")
+
+    # Silme işlemi
     if has_link or has_banned_word:
         try:
             await message.delete()
@@ -259,10 +281,15 @@ async def delete_octopus_ads(client, message):
             if has_banned_word: yakalanan_sey.append("Yasaklı Kelime")
             
             sebep = f"Karaliste ({user_id_str}/{username}) -> {' + '.join(yakalanan_sey)}"
-            print(f"✅ REKLAM SİLİNDİ: {message.from_user.first_name} (@{username}) | Sebep: {sebep}")
+            print(f"✅ BAŞARILI: REKLAM SİLİNDİ: {message.from_user.first_name} | Sebep: {sebep}")
             
         except Exception as e:
-            print(f"❌ Silme hatası: {e} - Botun bulunduğu grupta mesaj silme yetkisi olmayabilir.")
+            # EĞER BURASI ÇALIŞIRSA BOTUN YETKİSİ YOK DEMEKTİR
+            print(f"SİLME HATASI {e}")
+            print("👉  ol.")
+    else:
+        if is_test_account:
+            print("-> temizz.")
 
 
 # =========================================================
@@ -274,10 +301,10 @@ async def main():
     print("Bot başlatılıyor...")
     await bot.start()
     
-    # Dialogları güncellemek (ID hatalarını önler)
     async for dialog in bot.get_dialogs(): pass
     
-    print("🚀 Bot hazır, sesli komutları ve tüm gruplarda karaliste denetimi aktif!")
+    print("🚀 Bot hazır!")
+    print("NOT: Komutları /ekle yerine .ekle veya !ekle olarak da kullanabilirsiniz.")
     await idle()
     await bot.stop()
 
