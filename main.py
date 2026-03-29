@@ -42,7 +42,7 @@ ADMIN_IDS = [8416720490, 8382929624, 652932220, 7094870780]
 BANNED_WORDS = ["aramıza", "grubumuza", "grubuna", "sohbet", "ortam"]
 TELEGRAM_LINK_REGEX = r'(?:https?:\/\/)?(?:t\s*\.\s*me|telegram\s*\.\s*me|telegram\s*\.\s*dog)\s*\/\s*(?:\+)?[\w\-]+'
 BLACKLIST_FILE = "blacklist.json"
-CMD_PREFIXES = ["/", ".", "!"] # Komutları .ekle veya !ekle olarak da kullanabilmeni sağlar
+CMD_PREFIXES = ["/", ".", "!"] 
 
 # --- JSON VERİTABANI İŞLEMLERİ ---
 def load_blacklist():
@@ -67,7 +67,6 @@ def save_blacklist():
 BLACKLIST = load_blacklist()
 
 def is_admin(user):
-    # Eğer mesaj atan kişi botun kurulu olduğu ana hesapsa VEYA ID'si listedeyse admin say
     if not user: return False
     return user.is_self or (user.id in ADMIN_IDS)
 
@@ -228,68 +227,82 @@ async def list_blacklist_command(client, message):
 
 
 # =========================================================
-# 3. REKLAM DENETLEYİCİ (GELİŞMİŞ ID VE HATA KONTROLÜ)
+# 3. REKLAM DENETLEYİCİ (TÜM GRUPLAR İÇİN DERİN X-RAY)
 # =========================================================
 
 @bot.on_message(filters.group, group=1)
 async def delete_octopus_ads(client, message):
-    if not message.from_user: return
+    # Sadece hedef grupta (-1003297262036) veya sabıkalı hesaptan gelirse detaylı log basalım
+    is_target_group = (message.chat.id == -1003297262036)
     
-    # Yöneticiysen (senin ana hesabınsa) pas geç!
-    if is_admin(message.from_user): return
+    if is_target_group:
+        print("\n" + "="*50)
+        print(f"📥 [YENİ MESAJ] Grup ID: {message.chat.id}")
 
-    username = message.from_user.username.lower() if message.from_user.username else ""
-    user_id_str = str(message.from_user.id)
-    
-    # ÖZEL TEST: Bahsettiğin sabıkalı ID'yi buraya doğrudan (hardcoded) ekliyoruz.
-    is_test_account = (user_id_str == "7495125802")
-    
-    # 1. KONTROL: Bu kişi karalistede mi VEYA özel test hesabı mı?
-    is_blacklisted = (username in BLACKLIST) or (user_id_str in BLACKLIST) or is_test_account
-    
-    # Eğer adam listede değilse hiç bakma
-    if not is_blacklisted:
+    user_id_str = ""
+    username = ""
+    is_admin_flag = False
+
+    # 1. MESAJ KİMDEN GELDİ?
+    if not message.from_user:
+        if is_target_group: print("⚠️ 'from_user' bilgisi YOK! (Mesaj kanal veya anonim yönetici olarak atılmış)")
+        
+        # Gönderen kanal/grup ID'sini yakalamaya çalışalım
+        if message.sender_chat:
+            user_id_str = str(message.sender_chat.id)
+            username = message.sender_chat.username.lower() if message.sender_chat.username else ""
+            if is_target_group: print(f"👤 Gönderen Kanal/Grup ID: {user_id_str} | Username: {username}")
+        else:
+            if is_target_group: print("❌ Gönderen bilgisi tamamen gizli. Pas geçiliyor.\n" + "="*50)
+            return
+    else:
+        user_id_str = str(message.from_user.id)
+        username = message.from_user.username.lower() if message.from_user.username else ""
+        is_admin_flag = is_admin(message.from_user)
+        if is_target_group: print(f"👤 Gönderen Kullanıcı ID: {user_id_str} | Username: {username}")
+
+    # 2. ADMİN KONTROLÜ
+    if is_admin_flag:
+        if is_target_group: print("🛡️ Bu kişi yetkili/admin. Pas geçiliyor.\n" + "="*50)
         return
 
-    # Eğer sabıkalı hesapsa terminale bilgi yazdıralım ki botun görüp görmediğini anlayalım
-    if is_test_account:
-        print(f" deneme deneme mesajı inceliyorum...")
+    # 3. KARALİSTE KONTROLÜ
+    is_test_account = (user_id_str == "7495125802")
+    is_blacklisted = (username in BLACKLIST) or (user_id_str in BLACKLIST) or is_test_account
+    
+    if is_target_group: print(f"🔍 Karalistede mi?: {is_blacklisted} | Hedef 7495125802 mi?: {is_test_account}")
 
+    if not is_blacklisted:
+        if is_target_group: print("✅ Hesap sabıkalı değil, mesaja dokunulmadı.\n" + "="*50)
+        return
+
+    # 4. İÇERİK KONTROLÜ
     content = message.text or message.caption or ""
     content_lower = content.lower()
+    
+    if is_target_group: print(f"📝 İçerik Önizleme: {content[:30]}...")
 
-    # Link ve Kelime taraması
     has_link = bool(re.search(TELEGRAM_LINK_REGEX, content, re.IGNORECASE | re.MULTILINE))
     has_banned_word = any(word in content_lower for word in BANNED_WORDS)
 
-    # GÜVENLİK AĞI: Eğer Regex linki kaçırırsa düz metin olarak t.me geçiyor mu diye bak
+    # GÜVENLİK AĞI
     if not has_link and ("t.me/" in content_lower or "telegram.me/" in content_lower):
         has_link = True
-        if is_test_account:
-            print("-> Regex kaçırdı ama 't.me/' düz metin olarak yakalandı!")
+        if is_target_group: print("-> Regex kaçırdı ama düz metinde t.me bulundu!")
 
-    if is_test_account:
-        print(f"-> Link Bulundu mu?: {has_link} | Yasaklı Kelime Bulundu mu?: {has_banned_word}")
+    if is_target_group: print(f"🔗 Link var mı?: {has_link} | 🤬 Yasaklı kelime var mı?: {has_banned_word}")
 
-    # Silme işlemi
+    # 5. SİLME İŞLEMİ
     if has_link or has_banned_word:
         try:
             await message.delete()
-            
-            yakalanan_sey = []
-            if has_link: yakalanan_sey.append("Link")
-            if has_banned_word: yakalanan_sey.append("Yasaklı Kelime")
-            
-            sebep = f"Karaliste ({user_id_str}/{username}) -> {' + '.join(yakalanan_sey)}"
-            print(f"✅ BAŞARILI: REKLAM SİLİNDİ: {message.from_user.first_name} | Sebep: {sebep}")
-            
+            print(f"🚀 BAŞARILI: REKLAM SİLİNDİ! Grup: {message.chat.id} | Gönderen: {user_id_str}")
         except Exception as e:
-            # EĞER BURASI ÇALIŞIRSA BOTUN YETKİSİ YOK DEMEKTİR
-            print(f"SİLME HATASI {e}")
-            print("👉  ol.")
+            print(f"❌ SİLME HATASI! Yetki kontrolü yap. Detay: {e}")
     else:
-        if is_test_account:
-            print("-> temizz.")
+        if is_target_group: print("🟢 temizz.")
+        
+    if is_target_group: print("="*50 + "\n")
 
 
 # =========================================================
