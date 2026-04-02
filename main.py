@@ -10,7 +10,7 @@ from flask import Flask
 from pyrogram import Client, filters, idle
 from pyrogram.raw.functions.phone import CreateGroupCall, LeaveGroupCall
 from pyrogram.raw.functions.channels import GetFullChannel
-from pyrogram.errors import FloodWait, ChatAdminRequired, RPCError
+from pyrogram.errors import FloodWait, ChatAdminRequired
 
 # --- GÜVENLİK KİLİDİ ---
 try:
@@ -26,32 +26,34 @@ def home():
 
 def run_flask():
     try:
-        # Railway genelde PORT değişkenini otomatik atar
+        # Railway PORT değişkenini otomatik atar, yoksa 8080 kullanır
         port = int(os.environ.get("PORT", 8080))
         app.run(host='0.0.0.0', port=port)
     except Exception as e:
         print(f"❌ Flask Hatası: {e}")
 
-# --- AYARLAR ---
-# Bu değerleri Railway Environment Variables kısmına girin
+# --- AYARLAR (Environment Variables) ---
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
 TARGET_GROUP_ID = int(os.environ.get("TARGET_GROUP_ID", -1003297262036))
 
-# Yönetici ID'leri
-ADMIN_IDS = [8416720490, 8382929624, 652932220, 7094870780]
+# Yönetici ID'leri (Virgülle ayrılmış string olarak alıyoruz)
+admin_raw = os.environ.get("ADMIN_IDS", "8416720490,8382929624,652932220,7094870780")
+ADMIN_IDS = [int(i.strip()) for i in admin_raw.split(",") if i.strip()]
+
 BANNED_WORDS = ["aramıza", "grubumuza", "grubuna", "sohbet", "ortam", "Haber", "Gündem"]
 TELEGRAM_LINK_REGEX = r'(?:https?:\/\/)?(?:t\s*\.\s*me|telegram\s*\.\s*me|telegram\s*\.\s*dog)\s*\/\s*(?:\+)?[\w\-]+'
 BLACKLIST_FILE = "blacklist.json"
 CMD_PREFIXES = ["/", ".", "!"]
 
+# Botu in_memory=True ile başlatıyoruz (Railway disk çakışmasını önler)
 bot = Client(
     "sesli_bot",
     session_string=SESSION_STRING,
     api_id=API_ID,
     api_hash=API_HASH,
-    in_memory=True # Session dosyasını diske yazmaz, güvenlidir
+    in_memory=True
 )
 
 # --- VERİ YÖNETİMİ ---
@@ -60,17 +62,15 @@ def load_blacklist():
         try:
             with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-        except Exception as e:
-            print(f"⚠️ Karaliste yükleme hatası: {e}")
-            return {}
-    return {"7495125802": "Varsayılan Yasaklı"}
+        except: return {}
+    return {"7495125802": "Sabıkalı"}
 
 def save_blacklist():
     try:
         with open(BLACKLIST_FILE, "w", encoding="utf-8") as f:
             json.dump(BLACKLIST, f, ensure_ascii=False, indent=4)
     except Exception as e:
-        print(f"❌ Karaliste kaydetme hatası: {e}")
+        print(f"❌ Kayıt hatası: {e}")
 
 BLACKLIST = load_blacklist()
 
@@ -85,31 +85,26 @@ def is_admin(message):
 @bot.on_message(filters.command("sesliac", prefixes=CMD_PREFIXES) & filters.chat(TARGET_GROUP_ID))
 async def sesli_ac(client, message):
     try:
-        msg = await message.reply("🔄 Sesli Sohbet kontrol ediliyor...")
+        msg = await message.reply("🔄 İşlem başlatılıyor...")
         peer = await client.resolve_peer(message.chat.id)
         full_chat = await client.invoke(GetFullChannel(channel=peer))
         
         if full_chat.full_chat.call:
-            await msg.edit("⚠️ Sesli sohbet zaten açık durumda.")
+            await msg.edit("⚠️ Sesli zaten açık.")
             return
 
         await client.invoke(CreateGroupCall(peer=peer, random_id=random.randint(10000, 99999)))
-        await msg.edit("✅ Sesli sohbet başarıyla açıldı. 20 saniye sonra gruptan ayrılıyorum.")
-        
+        await msg.edit("✅ Sesli açıldı. 20s sonra ayrılıyorum.")
         await asyncio.sleep(20)
         
-        # Yeniden kontrol et ve ayrıl
         new_full = await client.invoke(GetFullChannel(channel=peer))
         if new_full.full_chat.call:
             await client.invoke(LeaveGroupCall(call=new_full.full_chat.call, source=0))
-            
-    except ChatAdminRequired:
-        await message.reply("❌ Hata: Görüntülü sohbet başlatma yetkim yok!")
     except Exception as e:
-        await message.reply(f"❌ Teknik Hata: {e}")
+        await message.reply(f"❌ Hata: {e}")
 
 # =========================================================
-# 2. REKLAM YÖNETİMİ (.ekle / .liste)
+# 2. REKLAM YÖNETİMİ
 # =========================================================
 
 @bot.on_message(filters.command("ekle", prefixes=CMD_PREFIXES))
@@ -125,83 +120,56 @@ async def add_bl(client, message):
             target_id = message.command[1].replace("@", "").lower()
         
         if target_id:
-            BLACKLIST[target_id] = "Manuel Ban"
+            BLACKLIST[target_id] = "Manuel"
             save_blacklist()
-            await message.reply(f"✅ `{target_id}` başarıyla karalisteye eklendi.")
-    except Exception as e: 
-        await message.reply(f"❌ Ekleme hatası: {e}")
+            await message.reply(f"✅ `{target_id}` karalisteye eklendi.")
+    except Exception as e: await message.reply(f"Hata: {e}")
 
 @bot.on_message(filters.command("liste", prefixes=CMD_PREFIXES))
 async def list_bl(client, message):
     if not is_admin(message): return
-    ids = list(BLACKLIST.keys())
-    if not ids:
-        await message.reply("📋 Karaliste şu an boş.")
-    else:
-        await message.reply(f"📋 **Karaliste:**\n`{', '.join(ids)}`")
+    await message.reply(f"📋 **Karaliste:**\n`{list(BLACKLIST.keys())}`")
 
 # =========================================================
-# 3. REKLAM SİLİCİ (GELİŞMİŞ)
+# 3. REKLAM SİLİCİ
 # =========================================================
 
 @bot.on_message(filters.group, group=1)
 async def ad_silici(client, message):
     try:
-        # Mesajı gönderen kişi yoksa veya adminse/botun kendisiyse işlem yapma
-        if not message.from_user or is_admin(message):
-            return
+        if not message.from_user or is_admin(message): return
 
         sender_id = str(message.from_user.id)
-        
-        # Sadece karalistekileri denetle
         if sender_id in BLACKLIST or sender_id == "7495125802":
             text = (message.text or message.caption or "").lower()
-            
-            has_link = bool(re.search(TELEGRAM_LINK_REGEX, text)) or "t.me/" in text
-            has_word = any(w.lower() in text for w in BANNED_WORDS)
-
-            if has_link or has_word:
+            if re.search(TELEGRAM_LINK_REGEX, text) or any(w.lower() in text for w in BANNED_WORDS):
                 await message.delete()
-                print(f"🔥 Reklam Silindi: {sender_id} | İçerik: {text[:20]}...")
-                
+                print(f"🔥 Reklam Silindi: {sender_id}")
     except FloodWait as e:
         await asyncio.sleep(e.value)
-    except ChatAdminRequired:
-        pass # Yetki yoksa sessizce geç
     except Exception:
         pass
 
 # =========================================================
-# BAŞLATMA DÖNGÜSÜ
+# ANA DÖNGÜ
 # =========================================================
 
 async def main():
-    # Flask'ı ayrı bir kanalda başlat
+    # Flask'ı başlat
     Thread(target=run_flask, daemon=True).start()
     
-    print("--- BOT HAZIRLANIYOR ---")
-    
+    print("--- BOT BAŞLATILIYOR ---")
     if not API_ID or not API_HASH or not SESSION_STRING:
-        print("❌ KRİTİK HATA: API_ID, API_HASH veya SESSION_STRING eksik!")
+        print("❌ HATA: Gerekli değişkenler (API_ID, HASH, SESSION) eksik!")
         return
 
     try:
         await bot.start()
         me = await bot.get_me()
-        print(f"✅ Giriş Başarılı: {me.first_name} (@{me.username})")
-        
-        # Grup kontrolü
-        try:
-            chat = await bot.get_chat(TARGET_GROUP_ID)
-            print(f"📢 Hedef Grup Aktif: {chat.title}")
-        except Exception as e:
-            print(f"⚠️ Uyarı: Hedef gruba ulaşılamadı. ID yanlış olabilir veya bot grupta değil.")
-
-        print("--- BOT AKTİF VE DİNLİYOR ---")
+        print(f"✅ Giriş Başarılı: {me.first_name}")
         await idle()
-        
     except Exception as e:
-        print(f"🚨 KRİTİK ÇALIŞMA HATASI:")
+        print(f"🚨 KRİTİK HATA:")
         traceback.print_exc()
     finally:
         if bot.is_connected:
@@ -209,7 +177,4 @@ async def main():
         print("--- BOT DURDURULDU ---")
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
