@@ -31,7 +31,13 @@ def run_flask():
 API_ID = int(os.environ.get("API_ID", 0))
 API_HASH = os.environ.get("API_HASH", "")
 SESSION_STRING = os.environ.get("SESSION_STRING", "")
-TARGET_GROUP_ID = int(os.environ.get("TARGET_GROUP_ID", 0))
+
+# Çoklu Grup ID Sistemi (Virgülle ayrılmış ID'leri listeye çevirir)
+target_raw = os.environ.get("TARGET_GROUP_ID", "")
+try:
+    TARGET_GROUP_IDS = [int(i.strip()) for i in target_raw.split(",") if i.strip()]
+except:
+    TARGET_GROUP_IDS = []
 
 # Admin Listesi (Railway'den virgülle ayrılmış olarak çekiyoruz)
 admin_raw = os.environ.get("ADMIN_IDS", "")
@@ -70,7 +76,8 @@ def is_admin(message):
 # 1. SESLİ SOHBET KOMUTLARI (GRUPTAKİ HERKESE AÇIK)
 # =========================================================
 
-@bot.on_message(filters.command(["sesliac", "seslireset"], prefixes=CMD_PREFIXES) & filters.chat(TARGET_GROUP_ID))
+# Dekorator artık TARGET_GROUP_IDS listesini okuyor
+@bot.on_message(filters.command(["sesliac", "seslireset"], prefixes=CMD_PREFIXES) & filters.chat(TARGET_GROUP_IDS))
 async def voice_manager(client, message):
     # DİKKAT: Burada is_admin kontrolü YOK. Hedef gruptaki herkes kullanabilir.
     cmd = message.command[0].lower()
