@@ -191,4 +191,14 @@ async def main():
         if bot.is_connected: await bot.stop()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Döngü çakışmalarını önlemek için global event loop kullanıyoruz
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
